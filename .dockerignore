@@ -27,13 +27,19 @@ dashboard/node_modules/
 *.swp
 *.swo
 
-# Video files (will be mounted via volume)
+# Video files (will be mounted via volume). `*.mp4` alone only matches the
+# context root, so job folders are listed too: a self-host's output/ held
+# 12 GB of clips and every build copied them all into the context.
 *.mp4
 *.avi
 *.mov
 *.mkv
 *.gif
+**/*.mp4
+**/*.part
 videos/
+output/
+uploads/
 
 # Model files (downloaded at build time)
 *.pt
