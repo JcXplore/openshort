@@ -143,13 +143,15 @@ def test_source_range_reaches_the_reservation_and_the_job(dirs, monkeypatch):
 
 
 def test_estimate_without_billing_says_so():
+    """No cost line, only the length the self-host range picker needs."""
     async def _do():
         transport = httpx.ASGITransport(app=app_module.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             return await client.post("/api/process/estimate", json={"seconds": 600})
     resp = asyncio.run(_do())
     assert resp.status_code == 200
-    assert resp.json() == {"billing": False}
+    assert resp.json() == {"billing": False, "source_minutes": 10.0, "is_live": False,
+                           "cap_minutes": app_module.SELF_HOST_SOURCE_CAP_MINUTES}
 
 
 def test_probe_cache_expires(monkeypatch):

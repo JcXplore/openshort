@@ -5,7 +5,9 @@ Run as a short subprocess by app.py BEFORE a job starts, so the user can decide
 to abort (and e.g. refresh cookies) instead of burning 20+ minutes of
 transcription and rendering on a 360p-only source.
 
-Prints JSON to stdout: {"max_height": int, "mode": str, "cookies_invalid": bool}
+Prints JSON to stdout: {"max_height": int, "mode": str, "cookies_invalid": bool,
+"duration": int, "is_live": bool}. A stream still on air reports what has
+aired so far as its duration.
 Always exits 0 — the caller treats probe failures as "unknown" and starts the
 job anyway (fail-open), where the in-job warning still applies.
 """
@@ -13,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 from dotenv import load_dotenv
 
@@ -37,7 +40,8 @@ def main() -> int:
     parser.add_argument("--url", required=True)
     args = parser.parse_args()
 
-    result = {"max_height": 0, "mode": None, "cookies_invalid": False, "duration": 0}
+    result = {"max_height": 0, "mode": None, "cookies_invalid": False, "duration": 0,
+              "is_live": False}
     # Same gates as the metering probe and the download (app.py also checks
     # before spawning this): a URL on a private / tailnet address, or a
     # YouTube page that is not one video, never reaches yt-dlp. The empty
@@ -118,6 +122,10 @@ def main() -> int:
                 if max_height > result["max_height"]:
                     result["max_height"] = max_height
                     result["mode"] = mode
+                if info.get('live_status') == 'is_live':
+                    result["is_live"] = True
+                    if not result["duration"] and info.get('release_timestamp'):
+                        result["duration"] = int(time.time() - info['release_timestamp'])
                 if not result["duration"]:
                     result["duration"] = int(info.get('duration') or 0)
                 if result["max_height"] >= 1080:

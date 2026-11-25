@@ -509,6 +509,28 @@ def _parse_source_range(start, end):
 # A stretch shorter than this cannot hold a few 15-60 s clips.
 MIN_RANGE_SECONDS = 60
 
+# Self-host: a link with no picked range is clipped from its first N minutes
+# (0 = whole video). A multi-hour livestream whole is ~10 GB to download and
+# hours of CPU transcription, and ran a home machine out of memory.
+SELF_HOST_SOURCE_CAP_MINUTES = int(os.environ.get("SELF_HOST_SOURCE_CAP_MINUTES") or 60)
+
+
+def self_host_source_cut(source_range):
+    """Self-host: the dashboard's picked range as a partial (the same cut a
+    billed job gets, without probing the source), or None for no range."""
+    if not source_range or source_range[1] in (None, ""):
+        return None
+    try:
+        start = max(0.0, float(source_range[0] or 0))
+        end = float(source_range[1])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="source_start / source_end must be seconds.")
+    if end - start < MIN_RANGE_SECONDS:
+        raise HTTPException(status_code=400, detail=(
+            f"Pick at least {MIN_RANGE_SECONDS} seconds of the video to clip."))
+    return {"start_seconds": round(start, 3), "end_seconds": round(end, 3),
+            "processed_minutes": round((end - start) / 60.0, 2), "chosen": True}
+
 # URL probes made for the dashboard's cost line, reused by /api/process when
 # the user submits the same link: (owner, url) -> (monotonic, minutes).
 _probe_cache: dict = {}
@@ -568,7 +590,8 @@ async def reserve_process_minutes(request, url, input_path, job_id, max_minutes=
     clips only that stretch: it is billed alone and comes back as a partial
     with ``start_seconds`` and ``chosen``.
 
-    BYOK / self-host requests don't consume minutes (priority 2, no reservation).
+    BYOK / self-host requests don't consume minutes (priority 2, no reservation);
+    self-host still honours the picked range (``self_host_source_cut``).
     For a managed (entitled, no BYOK header) request this probes the input
     duration, enforces the per-user concurrent-job limit, and reserves minutes —
     raising 402 (quota) or 429 (too many jobs) as needed.
@@ -579,7 +602,7 @@ async def reserve_process_minutes(request, url, input_path, job_id, max_minutes=
     on the operator's key for free. Only skip metering when billing is off.
     """
     if not BILLING_ENABLED:
-        return None, 2, None, None, None
+        return None, 2, None, None, self_host_source_cut(source_range)
     user = await _user_from_request(request)
     if not managed_keys.has_active_entitlement(user):
         return None, 2, None, None, None  # shouldn't happen (resolve_gemini would have 402'd)
@@ -5522,7 +5545,17 @@ async def process_estimate(req: EstimateRequest, request: Request):
     with every route. Reserves nothing.
     """
     if not BILLING_ENABLED:
-        return {"billing": False}
+        # No cost line, only the length, for the "clip only part of it" picker.
+        url = (req.url or "").strip()
+        if url:
+            await _validate_source_url(url)
+            probe = await _probe_youtube_quality(url)
+            seconds = float(probe.get("duration") or 0)
+        else:
+            seconds = float(req.seconds or 0)
+        return {"billing": False, "source_minutes": seconds / 60.0,
+                "is_live": bool(url and probe.get("is_live")),
+                "cap_minutes": SELF_HOST_SOURCE_CAP_MINUTES}
     user = await _user_from_request(request)
     if not managed_keys.has_active_entitlement(user):
         return {"billing": True, "outcome": None}
@@ -5881,6 +5914,8 @@ async def process_endpoint(
     # a server can answer it with a much longer file. main.py cuts anything
     # clearly past the reserved minutes (partial jobs already carry a cut).
     source_cap = getattr(request.state, "reserved_minutes", None)
+    if not source_cap and not BILLING_ENABLED:
+        source_cap = SELF_HOST_SOURCE_CAP_MINUTES or None
     if url and source_cap and not partial:
         env["SOURCE_CAP_MINUTES"] = str(source_cap)
     else:

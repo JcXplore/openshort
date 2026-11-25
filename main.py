@@ -986,6 +986,9 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
             # entry of the list into the SAME outtmpl (the title is the
             # playlist's), paying for all of them and keeping the last.
             'noplaylist': True,
+            # A stream still on air is clipped from what has aired so far,
+            # not from the moment the job joins (yt_clients.bound_live_fragments).
+            'live_from_start': True,
             'extractor_args': extractor_args,
             'http_headers': {
                 'User-Agent': (
@@ -1088,11 +1091,18 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         if _range_cap:
             _dur = info.get('duration')
             ranged = not _dur or float(_dur) > max(3 * _range_cap, _range_cap + 2700)
+        live = info.get('live_status') == 'is_live'
+        if live:
+            from yt_clients import bound_live_fragments
+            if bound_live_fragments(info, _range_cap):
+                ranged = False
+                print("🔴 Stream is still live: downloading from its start, up to what has aired"
+                      + (f" (at most {_range_cap / 60:.0f} min)." if _range_cap else "."))
         # Once per download, and not on the per-GB proxy (that is paid bytes,
         # and it is the last resort anyway). Not for a ranged download either:
         # the early audio would be the whole source.
         if (on_audio and not _early["started"] and info.get('formats') and not ranged
-                and not (_proxy and proxy == _proxy)):
+                and not live and not (_proxy and proxy == _proxy)):
             _early["started"] = True
             threading.Thread(target=_early_audio, args=(info, extractor_args, proxy, cookies),
                              daemon=True).start()

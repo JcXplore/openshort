@@ -121,3 +121,35 @@ def fallback_extractor_args(bgutil_http, bgutil_script):
     format, which is enough for a probe and better than no download."""
     return {**pot_provider_args(bgutil_http, bgutil_script),
             "youtube": {"player_client": list(HD_CLIENTS)}}
+
+
+def bound_live_fragments(info, max_seconds=None, now=None):
+    """Make a stream still on air download from its start up to what has
+    aired so far, or ``max_seconds`` of it when that is less.
+
+    With ``live_from_start`` yt-dlp otherwise follows the live edge until the
+    stream ends, so a job on a live link never finished downloading. Returns
+    True when a from-start format was bounded (then no ``download_ranges``:
+    those go through ffmpeg, which records from now, in real time).
+    """
+    import functools
+    import math
+    import time
+    started = info.get("release_timestamp")
+    aired = (now or time.time()) - started if started else None
+    limits = [s for s in (aired, max_seconds) if s and s > 0]
+    if not limits:
+        return False
+    bounded = False
+    for f in info.get("formats") or []:
+        gen = f.get("fragments")
+        if f.get("is_from_start") and callable(gen):
+            count = math.ceil(min(limits) / (f.get("target_duration") or 5))
+            f["fragments"] = functools.partial(_first_fragments, gen, count)
+            bounded = True
+    return bounded
+
+
+def _first_fragments(gen, count, ctx):
+    import itertools
+    return itertools.islice(gen(ctx), count)

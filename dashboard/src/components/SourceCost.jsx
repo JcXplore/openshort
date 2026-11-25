@@ -27,7 +27,9 @@ const clock = (seconds) => {
 const looksLikeUrl = (u) => /^https?:\/\/\S+\.\S+/.test((u || '').trim());
 
 export default function SourceCost({ mode, url, fileSeconds, range, onRangeChange }) {
-    const { isManaged } = useAuth();
+    const { isManaged, billingEnabled } = useAuth();
+    // Self-host has no cost line, only the length and the "clip only part of it" picker.
+    const selfHost = !billingEnabled;
     const [estimate, setEstimate] = useState(null);
     const [loading, setLoading] = useState(false);
     const [picking, setPicking] = useState(false);
@@ -37,7 +39,7 @@ export default function SourceCost({ mode, url, fileSeconds, range, onRangeChang
         setEstimate(null);
         setPicking(false);
         onRangeChange(null);
-        if (!isManaged) return undefined;
+        if (!isManaged && !selfHost) return undefined;
         let body = null;
         if (mode === 'url' && looksLikeUrl(url)) body = { url: url.trim() };
         else if (mode === 'file' && fileSeconds > 0) body = { seconds: fileSeconds };
@@ -53,7 +55,9 @@ export default function SourceCost({ mode, url, fileSeconds, range, onRangeChang
             })
                 .then((d) => {
                     if (cancelled) return;
-                    if (d?.outcome) {
+                    if (d?.billing === false) {
+                        if (d.source_minutes > 0) setEstimate(d);
+                    } else if (d?.outcome) {
                         setEstimate(d);
                         track('CostLineSeen', { props: { outcome: d.outcome, minutes: String(d.cost_minutes) } });
                     }
@@ -64,9 +68,9 @@ export default function SourceCost({ mode, url, fileSeconds, range, onRangeChang
         return () => { cancelled = true; clearTimeout(t); };
         // onRangeChange is a setState from the parent: stable.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isManaged, mode, url, fileSeconds]);
+    }, [isManaged, selfHost, mode, url, fileSeconds]);
 
-    if (!isManaged) return null;
+    if (!isManaged && !selfHost) return null;
     if (loading && !estimate) {
         return (
             <p className="mt-3 flex items-center gap-2 text-xs text-muted">
@@ -87,7 +91,17 @@ export default function SourceCost({ mode, url, fileSeconds, range, onRangeChang
     const setEnd = (v) => onRangeChange({ start, end: Math.max(v, start + MIN_RANGE_SECONDS) });
 
     let summary;
-    if (range) {
+    if (selfHost) {
+        const capped = !range && mode === 'url' && estimate.cap_minutes > 0
+            && total > estimate.cap_minutes * 60;
+        summary = (
+            <span className="text-ink2">
+                {range ? `${clock(start)}–${clock(end)} of ${clock(total)}` : `${clock(total)} video`}
+                {estimate.is_live && ' · still live, clipped up to now'}
+                {capped && ` · clips the first ${estimate.cap_minutes} min, or pick the part you want`}
+            </span>
+        );
+    } else if (range) {
         summary = (
             <span className={short ? 'text-warn' : 'text-ink2'}>
                 {clock(start)}–{clock(end)} of {clock(total)} · uses {rangeCost} of your {remaining} min
@@ -134,7 +148,7 @@ export default function SourceCost({ mode, url, fileSeconds, range, onRangeChang
                     </button>
                 )}
             </div>
-            <p className="text-muted mt-0.5">Billed per minute of video you import. Trims, reframes, hooks and captions on the clips are free.</p>
+            {!selfHost && <p className="text-muted mt-0.5">Billed per minute of video you import. Trims, reframes, hooks and captions on the clips are free.</p>}
             {(picking || range) && range && (
                 <div className="mt-3 space-y-2 animate-fade">
                     <label className="block">
