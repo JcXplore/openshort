@@ -164,7 +164,7 @@ export default function SubtitleModal({ isOpen, onClose, onGenerate, onApplyAll,
 
     const maxChars = lineBudget(fontName, fontSize, oneWord);
     // Same block duration as the auto captions (AUTO_CAPTION_STYLE).
-    const maxDuration = 1.4;
+    const maxDuration = 2.5;
 
     // Remotion preview state
     const [captions, setCaptions] = useState([]);

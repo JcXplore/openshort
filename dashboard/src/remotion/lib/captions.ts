@@ -9,8 +9,14 @@ export interface CaptionBlock {
 
 /**
  * Groups word-level captions into display blocks.
- * Same logic as OpenShorts' generate_srt: max chars per block, max duration per block.
+ * Same logic as OpenShorts' subtitles._collect_word_blocks: max chars and max
+ * duration per block, and a pause or a phrase end closes a block of 2+ words.
  */
+const PAUSE_BREAK_MS = 450;
+const PHRASE_END = /[.!?,;:]$/;
+const WEAK_ENDINGS = new Set(["a", "an", "the", "to", "of", "in", "on", "at", "for",
+  "and", "but", "or", "my", "your", "i"]);
+
 export function groupCaptionsIntoBlocks(
   captions: CaptionWord[],
   maxChars = 20,
@@ -32,11 +38,24 @@ export function groupCaptionsIntoBlocks(
       0
     );
     const duration = word.endMs - blockStartMs;
+    const prev = currentWords[currentWords.length - 1];
+    const naturalBreak =
+      currentWords.length >= 2 &&
+      (word.startMs - prev.endMs > PAUSE_BREAK_MS || PHRASE_END.test(prev.text));
 
     if (
       currentTextLen + word.text.length > maxChars ||
-      duration > maxDurationMs
+      duration > maxDurationMs ||
+      naturalBreak
     ) {
+      // Never end a block on "the"/"in"/"to": carry it to the next one.
+      const carried: CaptionWord[] = [];
+      while (
+        !naturalBreak && currentWords.length >= 2 &&
+        WEAK_ENDINGS.has(currentWords[currentWords.length - 1].text.toLowerCase())
+      ) {
+        carried.unshift(currentWords.pop() as CaptionWord);
+      }
       // Finalize current block
       const lastWord = currentWords[currentWords.length - 1];
       blocks.push({
@@ -46,8 +65,8 @@ export function groupCaptionsIntoBlocks(
         text: currentWords.map((w) => w.text).join(" "),
       });
 
-      currentWords = [word];
-      blockStartMs = word.startMs;
+      currentWords = [...carried, word];
+      blockStartMs = currentWords[0].startMs;
     } else {
       currentWords.push(word);
     }

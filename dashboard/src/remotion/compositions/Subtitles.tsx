@@ -206,8 +206,9 @@ const WordSpan: React.FC<WordSpanProps> = ({
         // Same range as the burned pop (\fscx90 -> \fscx108). A transform
         // takes no layout space, so the old 1.25 spilled over the space on
         // both sides and glued the active word to its neighbours.
-        const scaleValue = interpolate(scale, [0, 1], [0.9, 1.08]);
-        transform = `scale(${scaleValue})`;
+        // Now height only (\fscy100 -> \fscy114), so the line never shifts.
+        const scaleValue = interpolate(scale, [0, 1], [1, 1.14]);
+        transform = `scaleY(${scaleValue})`;
         break;
       }
       case "karaoke": {

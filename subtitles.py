@@ -149,6 +149,13 @@ def generate_srt_from_video(video_path, output_path, max_chars=20, max_duration=
     return generate_srt(transcript, 0, duration, output_path, max_chars, max_duration)
 
 
+# Silence between two words that ends a caption block (mirrored in captions.ts).
+PAUSE_BREAK_SECONDS = 0.45
+_PHRASE_END = (".", "!", "?", ",", ";", ":")
+_WEAK_ENDINGS = frozenset({"a", "an", "the", "to", "of", "in", "on", "at", "for",
+                           "and", "but", "or", "my", "your", "i"})
+
+
 def _collect_word_blocks(transcript, clip_start, clip_end, max_chars=20, max_duration=2.0):
     """
     Flatten transcript words for a clip range and group them into short blocks
@@ -188,11 +195,24 @@ def _collect_word_blocks(transcript, clip_start, clip_end, max_chars=20, max_dur
 
         current_text_len = sum(len(w['word']) + 1 for w in current_block)
         duration = word['end'] - block_start
+        prev = current_block[-1]
+        # A pause or a phrase end also closes a block once it holds two words:
+        # without it blocks straddled pauses ("FIRST TIME IN" / "GAME REAL BRO,").
+        natural_break = len(current_block) >= 2 and (
+            word['start'] - prev['end'] > PAUSE_BREAK_SECONDS
+            or prev['word'].endswith(_PHRASE_END))
 
-        if current_text_len + len(word['word']) > max_chars or duration > max_duration:
+        if (current_text_len + len(word['word']) > max_chars or duration > max_duration
+                or natural_break):
+            # Never end a block on "the"/"in"/"to": it reads as a cut-off
+            # phrase ("CASH IN THE" / "COUNTER"); carry it to the next one.
+            carried = []
+            while (not natural_break and len(current_block) >= 2
+                   and current_block[-1]['word'].lower() in _WEAK_ENDINGS):
+                carried.insert(0, current_block.pop())
             blocks.append(current_block)
-            current_block = [word]
-            block_start = word['start']
+            current_block = carried + [word]
+            block_start = current_block[0]['start']
         else:
             current_block.append(word)
 
@@ -250,7 +270,8 @@ AUTO_CAPTION_STYLE = {
     "base_opacity": 1.0,
     "uppercase": True,
     "max_chars": 16,
-    "max_duration": 1.4,
+    # Long enough for slow speech: at 1.4 s a streamer's every word stood alone.
+    "max_duration": 2.5,
 }
 
 
@@ -260,7 +281,7 @@ AUTO_CAPTION_STYLE = {
 # ships with, the rest are the short-form looks trending in 2026.
 _PRESET_BASE = {"style": "karaoke", "font_color": "#FFFFFF", "bg_opacity": 0.0,
                 "base_opacity": 1.0, "reveal": False, "shadow": 0,
-                "max_duration": 1.4}
+                "max_duration": 2.5}
 CAPTION_PRESETS = {
     "default": {**_PRESET_BASE, "font_name": "Anton", "font_size": 44,
                 "highlight_color": "#FFE500", "border_width": 4, "effect": "pop",
@@ -441,10 +462,10 @@ def generate_ass(transcript, clip_start, clip_end, output_path,
         # white text nobody can read.
         active_prefix = "{\\rActive}"
     elif effect == "pop":
-        # Gentle pop. The old 75->112 range started the word so small that any
-        # frame caught mid-animation read as a sizing bug rather than a beat.
+        # Gentle pop, height only: scaling the width too pushed the rest of the
+        # line sideways on every word, so the caption wobbled.
         active_prefix = (f"{{\\c{highlight_inline}"
-                         f"\\fscx90\\fscy90\\t(0,110,\\fscx108\\fscy108)}}")
+                         f"\\fscy100\\t(0,110,\\fscy114)}}")
     else:
         active_prefix = f"{{\\c{highlight_inline}}}"
 

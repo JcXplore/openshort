@@ -219,10 +219,38 @@ class TestGenerateAss:
         words = [_w(" pop", 0.0, 0.5)]
         assert generate_ass(self._transcript(words), 0, 10, str(out), effect="pop") is True
         content = out.read_text(encoding="utf-8-sig")
-        # Gentle range: the old 75->112 pop was so wide that a frame caught
-        # mid-animation read as a sizing bug rather than a beat.
-        assert "\\fscx90\\fscy90" in content
-        assert "\\t(0,110,\\fscx108\\fscy108)" in content
+        # Height only: a width change pushed the rest of the line sideways.
+        assert "\\fscy100\\t(0,110,\\fscy114)" in content
+        assert "\\fscx" not in content
+
+    def test_blocks_break_at_pauses_and_phrase_ends(self):
+        from subtitles import _collect_word_blocks
+        words = [_w(" first", 0.0, 0.3), _w(" time", 0.3, 0.6), _w(" in", 0.6, 0.7),
+                 # 0.8 s of silence, then a new phrase ending in a comma
+                 _w(" game", 1.5, 1.8), _w(" real", 1.8, 2.0), _w(" bro,", 2.0, 2.3),
+                 _w(" heard", 2.4, 2.7)]
+        blocks = _collect_word_blocks(self._transcript(words), 0, 10,
+                                      max_chars=40, max_duration=10)
+        assert [[w["word"] for w in b] for b in blocks] == [
+            ["first", "time", "in"], ["game", "real", "bro,"], ["heard"]]
+
+    def test_block_never_ends_on_a_small_word(self):
+        from subtitles import _collect_word_blocks
+        words = [_w(" cash", 0.0, 0.3), _w(" in", 0.3, 0.4), _w(" the", 0.4, 0.5),
+                 _w(" counter", 0.5, 0.9)]
+        blocks = _collect_word_blocks(self._transcript(words), 0, 10,
+                                      max_chars=12, max_duration=10)
+        assert [[w["word"] for w in b] for b in blocks] == [
+            ["cash"], ["in", "the", "counter"]]
+
+    def test_slow_speech_keeps_words_together(self):
+        """At the old 1.4 s every slowly spoken word ended up alone on screen."""
+        from subtitles import AUTO_CAPTION_STYLE, _collect_word_blocks
+        words = [_w(" give", 0.0, 0.7), _w(" me", 0.8, 1.4), _w(" this", 1.45, 2.1)]
+        blocks = _collect_word_blocks(self._transcript(words), 0, 10,
+                                      AUTO_CAPTION_STYLE["max_chars"],
+                                      AUTO_CAPTION_STYLE["max_duration"])
+        assert len(blocks) == 1
 
     def test_uppercase_transform(self, tmp_path):
         from subtitles import generate_ass

@@ -175,8 +175,10 @@ const WordSpan: React.FC<WordSpanProps> = ({
           config: { mass: 0.5, stiffness: 300, damping: 12 },
           durationInFrames: 10,
         });
-        const scaleValue = interpolate(scale, [0, 1], [1, 1.25]);
-        transform = `scale(${scaleValue})`;
+        // Height only, like the burned pop (\fscy100 -> \fscy114): a full
+        // scale pushed into the neighbouring words and shifted the line.
+        const scaleValue = interpolate(scale, [0, 1], [1, 1.14]);
+        transform = `scaleY(${scaleValue})`;
         break;
       }
       case "karaoke": {

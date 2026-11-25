@@ -1439,23 +1439,38 @@ def auto_hook_clip(clip_path, clip, captions=None, mark=False):
     text = (clip.get('viral_hook_text') or '').strip()
     if not text:
         return None
-    style = os.environ.get("AUTO_HOOK_STYLE", "pill")
+    style = os.environ.get("AUTO_HOOK_STYLE", "outline")
+    # The captions' typeface and one fixed spot on every clip: a Montserrat hook
+    # that moved per clip over Anton captions looked like two different apps.
+    font = os.environ.get("AUTO_HOOK_FONT", "anton")
+    position = os.environ.get("AUTO_HOOK_POSITION", "top")
     try:
         seconds = float(os.environ.get("AUTO_HOOK_SECONDS", "5"))
     except ValueError:
         seconds = 5.0
     try:
-        from hooks import add_hook_to_video, HOOK_STYLES
+        from hooks import add_hook_to_video, HOOK_STYLES, HOOK_FONTS
         if style not in HOOK_STYLES:
-            style = "pill"
+            style = "outline"
+        if font not in HOOK_FONTS:
+            font = "anton"
+        if position not in ("auto", "top", "center", "bottom"):
+            position = "top"
         output_dir = os.path.dirname(clip_path)
         out_path = os.path.join(
             output_dir, f"hooked_{int(time.time())}_{os.path.basename(clip_path)}")
-        # "auto": off the speaker's face and off the captions (hook_placement);
-        # the layout ranges say where the captions sit (the seam on SPLIT).
-        config = {"text": text, "style": style, "position": "auto",
+        # "auto" (AUTO_HOOK_POSITION): off the speaker's face and off the
+        # captions (hook_placement); the layout ranges say where captions sit.
+        config = {"text": text, "style": style, "font": font, "position": position,
                   "duration_seconds": seconds}
-        place = {"position": "auto", "layout_ranges": clip.get('layout_ranges'),
+        if font == "anton":
+            # Capitals and a size step above the captions: the headline of the
+            # same look, not a smaller lowercase line next to it.
+            text = text.upper()
+            config["text"] = text
+        place = {"position": position, "font": font,
+                 "font_scale": 1.2 if font == "anton" else 1.0,
+                 "layout_ranges": clip.get('layout_ranges'),
                  "has_captions": bool(captions)}
 
         def note(result):

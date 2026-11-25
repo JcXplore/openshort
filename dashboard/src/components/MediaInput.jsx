@@ -55,8 +55,9 @@ export default function MediaInput({ onProcess, isProcessing }) {
         try { return localStorage.getItem('os_auto_hook') !== '0'; } catch { return true; }
     });
     const [autoHookStyle, setAutoHookStyle] = useState(() => {
-        // v2 key: the default became 'pill'; an old saved 'classic' was just the old default.
-        try { return localStorage.getItem('os_auto_hook_style_v2') || 'pill'; } catch { return 'pill'; }
+        // v3 key: the default became 'outline' (the captions' own look); an old
+        // saved 'pill' was just the old default.
+        try { return localStorage.getItem('os_auto_hook_style_v3') || 'outline'; } catch { return 'outline'; }
     });
     // Layout: 'auto' lets the AI pick per video (server default); the others
     // force one on so a podcast host who knows what they uploaded doesn't
@@ -132,7 +133,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
         };
         try {
             localStorage.setItem('os_auto_hook', autoHook ? '1' : '0');
-            localStorage.setItem('os_auto_hook_style_v2', autoHookStyle);
+            localStorage.setItem('os_auto_hook_style_v3', autoHookStyle);
             localStorage.setItem('os_layout', layout);
         } catch { /* ignore */ }
         if (mode === 'url' && url) {
